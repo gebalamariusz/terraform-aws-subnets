@@ -1,0 +1,53 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body: |
+            ## Usage
+
+            ```hcl
+            module "subnets" {
+              source  = "gebalamariusz/subnets/aws"
+              version = "${{ github.ref_name }}"
+
+              name                = "my-app"
+              vpc_id              = module.vpc.vpc_id
+              internet_gateway_id = module.vpc.internet_gateway_id
+
+              subnets = {
+                "10.0.1.0/24" = {
+                  az     = "eu-west-1a"
+                  tier   = "public"
+                  public = true
+                }
+                "10.0.10.0/24" = {
+                  az     = "eu-west-1a"
+                  tier   = "private"
+                }
+              }
+            }
+            ```
+
+            ## Documentation
+
+            See [README.md](https://github.com/gebalamariusz/terraform-aws-subnets/blob/${{ github.ref_name }}/README.md) for full documentation.
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

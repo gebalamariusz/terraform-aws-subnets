@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://github.com/gebalamariusz/terraform-aws-subnets#readme
+    about: Check the documentation before opening an issue
+  - name: Terraform Registry
+    url: https://registry.terraform.io/modules/gebalamariusz/subnets/aws
+    about: View module on Terraform Registry
