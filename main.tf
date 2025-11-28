@@ -15,8 +15,26 @@ locals {
     }
   )
 
+  # Generate subnet names (used in multiple places)
+  subnet_names = {
+    for cidr, subnet in var.subnets : cidr =>
+    subnet.name != null ? subnet.name : "${local.name_prefix}-${subnet.tier}-${substr(subnet.az, -1, 1)}"
+  }
+
   # Extract unique tiers for route table creation
   unique_tiers = toset([for cidr, subnet in var.subnets : subnet.tier])
+
+  # Validate: all subnets in the same tier must have the same 'public' value
+  # This prevents accidentally exposing "private" subnets via shared route table
+  tier_public_consistency = {
+    for tier in local.unique_tiers : tier => distinct([
+      for cidr, subnet in var.subnets : subnet.public if subnet.tier == tier
+    ])
+  }
+  mixed_tiers = [
+    for tier, public_values in local.tier_public_consistency : tier
+    if length(public_values) > 1
+  ]
 
   # Determine which tiers are public (have at least one public subnet)
   public_tiers = toset([
@@ -33,7 +51,7 @@ locals {
 
   route_tables_per_subnet = !var.create_route_table_per_tier ? {
     for cidr, subnet in var.subnets : cidr => {
-      name      = subnet.name != null ? subnet.name : "${local.name_prefix}-${subnet.tier}-${substr(subnet.az, -1, 1)}"
+      name      = local.subnet_names[cidr]
       is_public = subnet.public
     }
   } : {}
@@ -54,11 +72,18 @@ resource "aws_subnet" "this" {
   tags = merge(
     local.common_tags,
     {
-      Name = each.value.name != null ? each.value.name : "${local.name_prefix}-${each.value.tier}-${substr(each.value.az, -1, 1)}"
+      Name = local.subnet_names[each.key]
       Tier = each.value.tier
     },
     each.value.tags
   )
+
+  lifecycle {
+    precondition {
+      condition     = !each.value.public || var.internet_gateway_id != ""
+      error_message = "Subnet ${each.key} has public = true but internet_gateway_id is not provided. Public subnets require an Internet Gateway for routing."
+    }
+  }
 }
 
 # ------------------------------------------------------------------------------
@@ -77,6 +102,13 @@ resource "aws_route_table" "per_tier" {
       Tier = each.key
     }
   )
+
+  lifecycle {
+    precondition {
+      condition     = length(local.mixed_tiers) == 0
+      error_message = "All subnets in the same tier must have the same 'public' value when using per-tier route tables. Mixed tiers found: ${join(", ", local.mixed_tiers)}. Use create_route_table_per_tier = false for mixed configurations."
+    }
+  }
 }
 
 # ------------------------------------------------------------------------------
