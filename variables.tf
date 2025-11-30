@@ -61,11 +61,11 @@ variable "subnets" {
 variable "internet_gateway_id" {
   description = "ID of the Internet Gateway for public subnet routes. Required if any subnet has public = true"
   type        = string
-  default     = ""
+  default     = null
 
   validation {
-    condition     = var.internet_gateway_id == "" || can(regex("^igw-", var.internet_gateway_id))
-    error_message = "Internet Gateway ID must start with 'igw-' or be empty."
+    condition     = var.internet_gateway_id == null || can(regex("^igw-", var.internet_gateway_id))
+    error_message = "Internet Gateway ID must start with 'igw-' or be null."
   }
 }
 

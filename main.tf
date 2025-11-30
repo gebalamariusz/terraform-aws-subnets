@@ -80,7 +80,7 @@ resource "aws_subnet" "this" {
 
   lifecycle {
     precondition {
-      condition     = !each.value.public || var.internet_gateway_id != ""
+      condition     = !each.value.public || var.internet_gateway_id != null
       error_message = "Subnet ${each.key} has public = true but internet_gateway_id is not provided. Public subnets require an Internet Gateway for routing."
     }
   }
@@ -134,7 +134,7 @@ resource "aws_route_table" "per_subnet" {
 
 resource "aws_route" "igw_per_tier" {
   for_each = {
-    for tier, rt in local.route_tables_per_tier : tier => rt if rt.is_public && var.internet_gateway_id != ""
+    for tier, rt in local.route_tables_per_tier : tier => rt if rt.is_public && var.internet_gateway_id != null
   }
 
   route_table_id         = aws_route_table.per_tier[each.key].id
@@ -144,7 +144,7 @@ resource "aws_route" "igw_per_tier" {
 
 resource "aws_route" "igw_per_subnet" {
   for_each = {
-    for cidr, rt in local.route_tables_per_subnet : cidr => rt if rt.is_public && var.internet_gateway_id != ""
+    for cidr, rt in local.route_tables_per_subnet : cidr => rt if rt.is_public && var.internet_gateway_id != null
   }
 
   route_table_id         = aws_route_table.per_subnet[each.key].id
