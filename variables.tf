@@ -58,17 +58,6 @@ variable "subnets" {
 # OPTIONAL VARIABLES
 # ------------------------------------------------------------------------------
 
-variable "internet_gateway_id" {
-  description = "ID of the Internet Gateway for public subnet routes. Required if any subnet has public = true"
-  type        = string
-  default     = null
-
-  validation {
-    condition     = var.internet_gateway_id == null || can(regex("^igw-", var.internet_gateway_id))
-    error_message = "Internet Gateway ID must start with 'igw-' or be null."
-  }
-}
-
 variable "environment" {
   description = "Environment name (used in naming/tagging if provided)"
   type        = string

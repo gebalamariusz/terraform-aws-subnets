@@ -13,9 +13,9 @@ Terraform module to create AWS subnets with flexible tier-based organization and
 - Flexible subnet definition using CIDR as key
 - User-defined tiers (public, private, database, or any custom name)
 - Automatic route table creation (per tier or per subnet)
-- Public subnet support with IGW routing
 - Outputs grouped by tier for easy integration
 - Compatible with [terraform-aws-vpc](https://registry.terraform.io/modules/gebalamariusz/vpc/aws) module
+- **Single responsibility**: creates subnets and route tables only (routes managed separately)
 
 ## Usage
 
@@ -32,11 +32,10 @@ module "vpc" {
 
 module "subnets" {
   source  = "gebalamariusz/subnets/aws"
-  version = "1.0.0"
+  version = "2.0.0"
 
-  name                = "my-app"
-  vpc_id              = module.vpc.vpc_id
-  internet_gateway_id = module.vpc.internet_gateway_id
+  name   = "my-app"
+  vpc_id = module.vpc.vpc_id
 
   subnets = {
     "10.0.1.0/24" = {
@@ -58,6 +57,13 @@ module "subnets" {
       tier   = "private"
     }
   }
+}
+
+# Add IGW route for public subnets
+resource "aws_route" "public_igw" {
+  route_table_id         = module.subnets.route_table_ids_by_tier["public"]
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = module.vpc.internet_gateway_id
 }
 ```
 
@@ -101,14 +107,22 @@ module "vpc" {
 }
 
 module "subnets" {
-  for_each            = var.vpcs
-  source              = "gebalamariusz/subnets/aws"
-  version             = "1.0.0"
+  for_each = var.vpcs
+  source   = "gebalamariusz/subnets/aws"
+  version  = "2.0.0"
 
-  name                = each.key
-  vpc_id              = module.vpc[each.key].vpc_id
-  internet_gateway_id = module.vpc[each.key].internet_gateway_id
-  subnets             = each.value.subnets
+  name    = each.key
+  vpc_id  = module.vpc[each.key].vpc_id
+  subnets = each.value.subnets
+}
+
+# Add IGW routes for public tiers
+resource "aws_route" "public_igw" {
+  for_each = module.subnets
+
+  route_table_id         = each.value.route_table_ids_by_tier["public"]
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = module.vpc[each.key].internet_gateway_id
 }
 ```
 
@@ -132,11 +146,10 @@ By default, one route table is created per tier (shared by all subnets in that t
 ```hcl
 module "subnets" {
   source  = "gebalamariusz/subnets/aws"
-  version = "1.0.0"
+  version = "2.0.0"
 
   name                        = "my-app"
   vpc_id                      = module.vpc.vpc_id
-  internet_gateway_id         = module.vpc.internet_gateway_id
   create_route_table_per_tier = false  # Creates one RT per subnet
 
   subnets = {
@@ -159,7 +172,6 @@ module "subnets" {
 | name | Name prefix for all resources | `string` | n/a | yes |
 | vpc_id | ID of the VPC where subnets will be created | `string` | n/a | yes |
 | subnets | Map of subnets to create (CIDR as key) | `map(object)` | n/a | yes |
-| internet_gateway_id | ID of the Internet Gateway for public subnets | `string` | `""` | no |
 | environment | Environment name (used in naming/tagging) | `string` | `""` | no |
 | create_route_table_per_tier | Create one route table per tier (true) or per subnet (false) | `bool` | `true` | no |
 | tags | Additional tags for all resources | `map(string)` | `{}` | no |
@@ -170,7 +182,7 @@ module "subnets" {
 |-----------|-------------|------|---------|:--------:|
 | az | Availability Zone | `string` | n/a | yes |
 | tier | Tier name for grouping | `string` | n/a | yes |
-| public | Enable public IP and IGW route | `bool` | `false` | no |
+| public | Enable public IP on launch | `bool` | `false` | no |
 | name | Custom subnet name | `string` | auto-generated | no |
 | tags | Additional tags for this subnet | `map(string)` | `{}` | no |
 
@@ -185,22 +197,43 @@ module "subnets" {
 | subnet_cidrs_by_tier | Map of subnet CIDRs grouped by tier |
 | route_table_ids | List of all route table IDs |
 | route_table_ids_by_tier | Map of route table IDs by tier |
+| route_table_ids_by_cidr | Map of route table IDs by subnet CIDR |
 | public_subnet_ids | List of public subnet IDs |
 | private_subnet_ids | List of private subnet IDs |
 | tiers | List of unique tier names |
 | availability_zones | List of availability zones used |
 
-## Integration with NAT Gateway
+## Adding Routes
 
-This module is designed to work with a separate NAT Gateway module:
+This module creates subnets and route tables only. Add routes separately:
+
+### Internet Gateway (public subnets)
 
 ```hcl
-module "nat" {
-  source  = "gebalamariusz/nat-gateway/aws"
-  version = "1.0.0"
+resource "aws_route" "public_igw" {
+  route_table_id         = module.subnets.route_table_ids_by_tier["public"]
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = module.vpc.internet_gateway_id
+}
+```
 
-  subnet_ids              = module.subnets.subnet_ids_by_tier["public"]
-  private_route_table_ids = [module.subnets.route_table_ids_by_tier["private"]]
+### NAT Gateway (private subnets)
+
+```hcl
+resource "aws_route" "private_nat" {
+  route_table_id         = module.subnets.route_table_ids_by_tier["private"]
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.main.id
+}
+```
+
+### Transit Gateway
+
+```hcl
+resource "aws_route" "to_shared_services" {
+  route_table_id         = module.subnets.route_table_ids_by_tier["private"]
+  destination_cidr_block = "10.0.0.0/8"
+  transit_gateway_id     = aws_ec2_transit_gateway.main.id
 }
 ```
 
